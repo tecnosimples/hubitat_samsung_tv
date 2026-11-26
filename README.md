@@ -14,6 +14,8 @@ Baseado no **Samsung TV Remote** de Dave Gutheinz (Apache-2.0), com o **ligar/de
 O resultado só é publicado com o estado **lido da TV**; sem confirmação em 15 s, o driver avisa no log e
 publica o estado real. Nada de "ligada por suposição".
 
+📘 **Passo a passo completo (TV, HPM, sem HPM, problemas comuns): [GUIA_INSTALACAO.md](GUIA_INSTALACAO.md)**
+
 ## ✅ Requisito na TV
 
 Ative **Ligar com Celular** (*Power On with Mobile*): Configurações → Geral → Rede → Configurações Avançadas.
