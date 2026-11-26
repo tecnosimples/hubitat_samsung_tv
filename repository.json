@@ -1,0 +1,14 @@
+{
+  "author": "TecnoSimples Tecnologia LTDA",
+  "gitHubUrl": "https://github.com/tecnosimples/hubitat_samsung_tv",
+  "payPalUrl": "",
+  "packages": [
+    {
+      "name": "Samsung TV Remote — TecnoSimples",
+      "category": "Integrations",
+      "location": "https://raw.githubusercontent.com/tecnosimples/hubitat_samsung_tv/main/packageManifest.json",
+      "description": "Controle local de TVs Samsung Tizen (WebSocket + Wake-on-LAN) com ligar/desligar confiável, decidido pelo estado lido da própria TV.",
+      "tags": ["Samsung", "TV", "Tizen", "Local", "Integrations"]
+    }
+  ]
+}

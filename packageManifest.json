@@ -1,0 +1,20 @@
+{
+  "packageName": "Samsung TV Remote — TecnoSimples",
+  "author": "TecnoSimples Tecnologia LTDA (baseado no driver de Dave Gutheinz)",
+  "version": "2.4.0",
+  "minimumHEVersion": "2.3.0",
+  "dateReleased": "2026-11-26",
+  "licenseFile": "https://raw.githubusercontent.com/tecnosimples/hubitat_samsung_tv/main/LICENSE",
+  "documentationLink": "https://github.com/tecnosimples/hubitat_samsung_tv",
+  "communityLink": "https://community.hubitat.com",
+  "releaseNotes": "Ligar/desligar decididos pelo PowerState lido da TV (tecla em standby, Wake-on-LAN com a TV dormindo, desligar nunca liga uma TV em standby). Correções do driver base.",
+  "drivers": [
+    {
+      "id": "8a40a58c-e46a-49ca-bb98-e3685d9cdf11",
+      "name": "Samsung TV Remote (TecnoSimples)",
+      "namespace": "TecnoSimples",
+      "location": "https://raw.githubusercontent.com/tecnosimples/hubitat_samsung_tv/main/drivers/SamsungTVRemote.groovy",
+      "required": true
+    }
+  ]
+}
