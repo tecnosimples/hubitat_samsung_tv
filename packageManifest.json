@@ -1,13 +1,13 @@
 {
   "packageName": "Samsung TV Remote — TecnoSimples",
   "author": "TecnoSimples Tecnologia LTDA (baseado no driver de Dave Gutheinz)",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "minimumHEVersion": "2.3.0",
-  "dateReleased": "2026-11-26",
+  "dateReleased": "2026-11-27",
   "licenseFile": "https://raw.githubusercontent.com/tecnosimples/hubitat_samsung_tv/main/LICENSE",
   "documentationLink": "https://github.com/tecnosimples/hubitat_samsung_tv",
   "communityLink": "https://community.hubitat.com",
-  "releaseNotes": "Ligar/desligar decididos pelo PowerState lido da TV (tecla em standby, Wake-on-LAN com a TV dormindo, desligar nunca liga uma TV em standby). Correções do driver base.",
+  "releaseNotes": "2.4.1: uma leitura perdida não decide mais (o desligar e a sonda esperam duas seguidas sem resposta); a tecla POWER só se repete 5 s depois de ter saído; TV que responde sem PowerState (modelos anteriores) conta como ligada (antes aparecia sempre off e ligar/desligar não faziam nada; não verificado num equipamento assim). Dois comandos iguais em seguida (desligar, desligar) não alternam mais a TV. 2.4.0: ligar/desligar decididos pelo PowerState lido da TV (tecla em standby, Wake-on-LAN com a TV dormindo, desligar nunca liga uma TV em standby). Correções do driver base.",
   "drivers": [
     {
       "id": "8a40a58c-e46a-49ca-bb98-e3685d9cdf11",

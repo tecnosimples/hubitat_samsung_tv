@@ -14,6 +14,14 @@ Baseado no **Samsung TV Remote** de Dave Gutheinz (Apache-2.0), com o **ligar/de
 O resultado só é publicado com o estado **lido da TV**; sem confirmação em 15 s, o driver avisa no log e
 publica o estado real. Nada de "ligada por suposição".
 
+Detalhes da regra (2.4.1):
+- **Uma leitura perdida não decide.** O desligar e a sonda periódica só tratam a TV como desligada depois de
+  duas leituras seguidas sem resposta.
+- **A tecla POWER só se repete 5 s depois de ter saído**, para não ligar e desligar em seguida.
+- **TV que responde sem informar `PowerState`** (modelos anteriores): conta como **ligada** enquanto responde.
+  Não foi verificado num equipamento assim. Nela o desligar manda uma tecla só, porque o repouso não pode ser
+  confirmado, e o dispositivo passa a aparecer "on" quando a TV responde (antes aparecia sempre "off").
+
 📘 **Passo a passo completo (TV, HPM, sem HPM, problemas comuns): [GUIA_INSTALACAO.md](GUIA_INSTALACAO.md)**
 
 ## ✅ Requisito na TV
