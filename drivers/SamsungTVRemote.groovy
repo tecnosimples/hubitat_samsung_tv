@@ -33,6 +33,19 @@ TecnoSimples - 27.11.2026 - v2.4.1-ts:
         toggles the TV back; a queued POWER key is dropped as soon as the TV is read in a state
         that no longer asks for it; only the newest poll answer counts; a driver update no longer
         stalls every poll for 3 s until Save Preferences.
+TecnoSimples - 27.11.2026 - v2.4.2-ts (2.4.1 was published from the code up to item e above):
+    a.  off, on, off within a second no longer sends a second POWER key: the time and direction of
+        the last key that really left are never cleared, the wait is computed from them.
+    b.  The end of an on()/off() publishes the state that sequence just read (it used to ask for one
+        more read, and a lost one left the switch wrong until the next poll). The power poll does not
+        decide while an on()/off() is running.
+    c.  A POWER key queued by a sequence that died (hub reboot) is dropped instead of sent later.
+    d.  TV without PowerState: no second "off" key for 15 s after one that left, also on a repeated
+        off(). An explicit null PowerState is "not understood", not "model without PowerState".
+    e.  Nothing is written to the WebSocket between "socket open" and ms.channel.connect (up to 30 s
+        while the TV waits for its on-screen authorization): the message waits in the (one-slot)
+        queue. Found on the bench: two POWER keys were written in that gap and counted as sent, and
+        the TV was in standby 11 s after the channel was released (one sample).
 
 ===========================================================================================*/
 
@@ -204,6 +217,8 @@ def onPollRecheck() { onPoll() }
 
 def onPollParse(resp, data) {
     if (data?.seq != state.pollSeq) { return }       // leitura antiga, já substituída por outra
+    if (pwrActive()) { return }                      // ligar/desligar em curso: quem publica é a sequência, ao terminar
+    if (state.pwrSeq) { state.pwrSeq = 0 }           // sequência que morreu no meio (reinício do hub): não descarta tecla manual depois
     Map r = pwrRead(resp)
     def powerState = r.ps ?: "NC"
     if (r.ps == null || r.ps == "unknown") {
@@ -222,6 +237,12 @@ def onPollParse(resp, data) {
     if (powerState == "on") { onOff = "on" }
     Map logData = [method: "onPollParse", httpStatus: resp.status,
                    powerState: powerState, onOff: onOff]
+    pwrPublish(onOff, logData)
+    logDebug(logData)
+}
+
+//    Publica o estado de energia. Um só caminho: a sonda periódica e o fim de um ligar/desligar.
+def pwrPublish(String onOff, Map logData = [:]) {
     if (device.currentValue("switch") != onOff) {
         sendEvent(name: "switch", value: onOff)
         logData << [switch: onOff]
@@ -231,13 +252,26 @@ def onPollParse(resp, data) {
             setPowerOffMode()
         }
     }
-    logDebug(logData)
+}
+
+//    Fim de uma sequência: publica o que a própria sequência acabou de ler da TV, sem depender de mais
+//    uma leitura (que podia se perder e deixar o switch errado até a próxima sonda). Só quando a última
+//    leitura não serve (uma única falta, ou resposta que não se entende) a sonda é chamada para decidir.
+def pwrFinish(String ps) {
+    unschedule("onPollRecheck")
+    state.pollSeq = now()       // sonda periódica lançada durante a sequência não sobrescreve o que ela publica
+    int miss = (state.pwrMiss ?: 0) as int
+    if (ps == "on" || ps == "standby" || (ps == null && miss >= 2)) {
+        state.pollMiss = (ps == null) ? 2 : 0
+        pwrPublish(ps == "on" ? "on" : "off")
+    } else {
+        onPoll()
+    }
 }
 
 //    ===== Capability Switch =====
 //    ===== TecnoSimples: ligar pelo estado lido da TV =====
-//    Regra medida em bancada (UN32T4300, 56/56 ciclos — Hubitat_MolSmart/Center/docs/
-//    2026-11-26-tv-samsung-liga-desliga-bateria.md). Requer "Ligar com Celular" ativado na TV.
+//    Regra medida em bancada (UN32T4300, 56/56 ciclos). Requer "Ligar com Celular" ativado na TV.
 //    - PowerState=on      -> pronto.
 //    - PowerState=standby -> tecla POWER (só 3 s ou mais depois do off: antes disso a TV ignora).
 //    - TV não responde    -> só Wake-on-LAN. Nunca tecla: ela fica presa na fila do WebSocket
@@ -246,7 +280,7 @@ def onPollParse(resp, data) {
 //    Desligar: PowerState=on -> tecla POWER e confirma; standby ou sem resposta -> já está desligada
 //    (POWER é toggle: mandado com a TV em standby, o "desligar" a LIGARIA).
 //    Tempos medidos em UM modelo; por isso a decisão é pelo estado lido, não por tempo.
-//    2.4.1 (do driver da central MolSmart, revisado e ensaiado com a mesma TV em 26 e 27/11):
+//    2.4.1 (revisado e ensaiado com a mesma TV em 26 e 27/11):
 //    - TV que responde sem PowerState (modelos anteriores) conta como ligada. NÃO verificado num
 //      equipamento assim; como o repouso não pode ser confirmado, o desligar manda UMA tecla só.
 //    - Uma leitura sem resposta não decide o desligar: só a segunda seguida vale como desligada.
@@ -256,6 +290,7 @@ private int pwrActionGapMs()     { return 2500 }   // espera antes de repetir o 
 private int pwrKeyGapMs()        { return 5000 }   // espera antes de repetir a tecla (subir num modelo mais lento)
 private int pwrProbeEveryMs()    { return 1000 }
 private int pwrDeadlineMs()      { return 15000 }
+private int wsHandshakeMs()      { return 45000 }  // socket aberto sem ms.channel.connect: passado isto, reconecta (aviso da TV medido: 30,4 s)
 
 def on() {
     logInfo("on: [frameTv: ${getDataValue("frameTv")}]")
@@ -268,11 +303,9 @@ def pwrStart(String target) {
     state.pwrTarget = target
     state.pwrSeq = now()        // identifica esta sequência; on()/off() seguintes a cancelam
     unschedule("onPollRecheck")
-    state.pwrKeyAt = 0
-    //    A hora da última tecla que saiu vale entre sequências do MESMO sentido: off() duas vezes em
-    //    menos de 1 s mandava duas teclas e religava a TV. No sentido contrário quem manda é pwrOffAt/pwrOnAt.
-    if (state.pwrKeyFor != target) { state.pwrKeySentAt = 0 }
-    state.pwrKeyInSeq = false   // alguma tecla já saiu NESTA sequência (limite da TV sem PowerState)
+    state.pollSeq = now()       // uma sonda periódica ainda em voo não decide mais nada
+    state.pwrKeyAt = 0          // hora da DECISÃO da tecla, desta sequência (a fila é esvaziada abaixo)
+    //    pwrKeySentAt/pwrKeyFor (hora e sentido da última tecla que SAIU) nunca são zerados: ver pwrSinceKey().
     state.pwrWolAt = 0
     state.pwrMiss = 0
     state.wsData = ""           // descarta tecla da sequência anterior ainda na fila do handshake
@@ -294,12 +327,37 @@ Map pwrRead(resp) {
         def root = parseJson(resp.data)
         def dev = (root instanceof Map) ? root.device : null
         if (!(dev instanceof Map)) { return [ps: "unknown", blind: false] }
-        if (dev.PowerState == null) { return [ps: "on", blind: true] }
+        if (!dev.containsKey("PowerState")) { return [ps: "on", blind: true] }
+        if (dev.PowerState == null) { return [ps: "unknown", blind: false] }
         String v = dev.PowerState.toString()
         return [ps: (v == "on" || v == "standby") ? v : "unknown", blind: false]
     } catch (e) {
         return [ps: "unknown", blind: false]
     }
+}
+
+//    Sequência de ligar/desligar em curso? pwrSeq é a hora em que começou; com folga, para que uma
+//    sequência que morreu no meio (reinício do hub) não cale a sonda periódica para sempre.
+boolean pwrActive() {
+    return state.pwrSeq && (now() - (state.pwrSeq as long)) < (pwrDeadlineMs() + 5000)
+}
+
+//    Há quanto tempo foi a última tecla que conta para ESTE sentido (espelhado em pwr_since_key()):
+//    a decidida nesta sequência (keyAt) ou a última que saiu de fato, se foi do mesmo sentido.
+//    Comando repetido (off, off; ou off, on, off em menos de 1 s) não manda uma segunda tecla em seguida.
+//    Tecla do sentido contrário não conta aqui: para ela valem pwrOffAt (3,2 s) e pwrOnAt.
+long pwrSinceKey(long t, long keyAt, long keySentAt, String keyFor, String target) {
+    long sent = (keyFor == target) ? keySentAt : 0
+    long last = Math.max(keyAt, sent)
+    return last ? t - last : 999999
+}
+
+//    TV sem PowerState: o repouso não pode ser confirmado, então uma sequência não manda tecla se outra
+//    do mesmo sentido saiu durante ela ou menos de pwrDeadlineMs antes de ELA COMEÇAR (seqStart): um off()
+//    repetido não ganha uma segunda tecla no meio do caminho (espelhado em pwr_blind_spent()).
+//    Uma ação do sentido contrário depois dessa tecla (oppositeAt: WOL ou tecla de ligar) a deixa sem efeito.
+boolean pwrBlindSpent(boolean blind, long seqStart, long keySentAt, String keyFor, String target, long oppositeAt) {
+    return blind && keyFor == target && keySentAt > 0 && oppositeAt <= keySentAt && (seqStart - keySentAt) < pwrDeadlineMs()
 }
 
 //    Uma tecla POWER ainda na fila do handshake não pode sair depois que a sequência terminou.
@@ -317,21 +375,18 @@ def pwrProbeParse(resp, data) {
     state.pwrMiss = (ps == null) ? ((state.pwrMiss ?: 0) as int) + 1 : 0
     long t = now()
     long sinceOff = state.pwrOffAt ? t - state.pwrOffAt : 999999
-    //    a espera da tecla conta do que for mais recente: a decisão ou a saída real pelo socket
-    long lastKey = Math.max((state.pwrKeyAt ?: 0) as long, (state.pwrKeySentAt ?: 0) as long)
-    long sinceKey = lastKey ? t - lastKey : 999999
     long sinceWol = state.pwrWolAt ? t - state.pwrWolAt : 999999
     long sinceOn  = state.pwrOnAt  ? t - state.pwrOnAt  : 999999
     String target = state.pwrTarget ?: "on"
     long elapsed = t - state.pwrSeq
     //    Tecla ainda na fila do handshake só vale enquanto a TV está no estado que a pediu: lida em outro
     //    estado (ou sem resposta), sai da fila antes que o canal abra e ela alterne a TV para o lado errado.
-    if (ps != ((target == "off") ? "on" : "standby")) {
-        boolean queued = state.wsData && state.wsData.toString().contains("KEY_POWER")
-        pwrDropQueuedKey()
-        if (queued) { sinceKey = state.pwrKeySentAt ? t - (state.pwrKeySentAt as long) : 999999 }
-    }
-    boolean blindSpent = r.blind && state.pwrKeyInSeq
+    if (ps != ((target == "off") ? "on" : "standby")) { pwrDropQueuedKey() }
+    long keyAt = (state.pwrKeyAt ?: 0) as long
+    long keySentAt = (state.pwrKeySentAt ?: 0) as long
+    long sinceKey = pwrSinceKey(t, keyAt, keySentAt, state.pwrKeyFor as String, target)
+    long oppositeAt = ((target == "off" ? state.pwrOnAt : state.pwrOffAt) ?: 0) as long
+    boolean blindSpent = pwrBlindSpent(r.blind as boolean, state.pwrSeq as long, keySentAt, state.pwrKeyFor as String, target, oppositeAt)
     String action = (target == "off") ? pwrOffDecide(ps, sinceOn, sinceKey, elapsed, state.pwrMiss as int, blindSpent)
                                       : pwrOnDecide(ps, sinceOff, sinceKey, sinceWol, elapsed)
     logDebug("pwrProbeParse: [target: ${target}, PowerState: ${ps}, blind: ${r.blind}, miss: ${state.pwrMiss}, sinceOff: ${sinceOff}, sinceKey: ${sinceKey}, action: ${action}]")
@@ -339,15 +394,15 @@ def pwrProbeParse(resp, data) {
         case "done":
             state.pwrSeq = 0
             pwrDropQueuedKey()
-            state.pollMiss = (ps == null) ? 1 : 0    // a sequência já viu a TV fora da rede: a sonda não reconfere
-            onPoll()                                 // publica pelo caminho normal (setPowerOn/OffMode)
+            pwrFinish(ps)                            // publica o estado lido (setPowerOn/OffMode)
             return
         case "timeout":
             state.pwrSeq = 0
             pwrDropQueuedKey()
-            state.pollMiss = (ps == null) ? 1 : 0
-            logWarn("${target}: sem confirmação em ${pwrDeadlineMs() / 1000} s [último PowerState: ${ps}${r.blind ? ' (suposto: a TV não informa PowerState)' : ''}]")
-            onPoll()                                 // publica o estado real, nunca o suposto
+            logWarn("${target}: sem confirmação em ${pwrDeadlineMs() / 1000} s [último PowerState: ${ps}${r.blind ? ' (suposto: a TV não informa PowerState)' : ''}]" +
+                    //    só com o socket aberto e o canal ainda não liberado; socket que nem abriu (TV fora da rede) não é pedido de autorização
+                    ((state.wsReady == false && device.currentValue("wsStatus") == "open") ? " O canal de controle não foi liberado pela TV: veja se há um pedido de autorização na tela dela." : ""))
+            pwrFinish(ps)                            // publica o estado real, nunca o pedido
             return
         case "abort":
             state.pwrSeq = 0
@@ -806,9 +861,19 @@ def sendMessage(funct, data) { // library marker davegut.samsungTvWebsocket, lin
     def wsStat = device.currentValue("wsStatus") // library marker davegut.samsungTvWebsocket, line 218
     Map logData = [method: "sendMessage", wsStat: wsStat, funct: funct, data: data] // library marker davegut.samsungTvWebsocket, line 219
     logDebug("sendMessage: [wsStatus: ${wsStat}, function: ${funct}, data: ${data}, connectType: ${state.currentFunction}") // library marker davegut.samsungTvWebsocket, line 220
-    if (wsStat == "open" && state.currentFunction == funct) { // library marker davegut.samsungTvWebsocket, line 221
+    //    TecnoSimples 2.4.2: socket aberto não é canal pronto. Entre o "open" e o ms.channel.connect (até 30 s
+    //    quando a TV está pedindo autorização na tela) nada é escrito: a mensagem fica na fila e sai quando
+    //    o canal abrir. Bancada 27/11: dois KEY_POWER foram escritos nesse intervalo e contados como enviados; 11 s
+    //    depois de o canal ser liberado a TV estava em repouso (uma amostra). A fila tem uma vaga só, como
+    //    sempre teve enquanto a conexão abre: uma segunda mensagem nesse intervalo troca a primeira.
+    //    wsReady == null (canal aberto por uma versão anterior do driver) vale como pronto.
+    if (wsStat == "open" && state.currentFunction == funct && state.wsReady != false) { // library marker davegut.samsungTvWebsocket, line 221
         execMessage(data) // library marker davegut.samsungTvWebsocket, line 222
         logData << [action: "execMessage"] // library marker davegut.samsungTvWebsocket, line 223
+    } else if (wsStat == "open" && state.currentFunction == funct && (now() - ((state.wsConnectAt ?: 0) as long)) < wsHandshakeMs()) {
+        //    canal ainda não liberado: espera. Passado wsHandshakeMs, o ramo abaixo fecha e reconecta (nunca preso)
+        state.wsData = data
+        logData << [action: "queued (channel not ready)"]
     } else { // library marker davegut.samsungTvWebsocket, line 224
         if (wsStat == "open") { close() } // library marker davegut.samsungTvWebsocket, line 225
         state.wsData = data // library marker davegut.samsungTvWebsocket, line 226
@@ -820,10 +885,9 @@ def sendMessage(funct, data) { // library marker davegut.samsungTvWebsocket, lin
 } // library marker davegut.samsungTvWebsocket, line 232
 def execMessage(data) { // library marker davegut.samsungTvWebsocket, line 233
     interfaces.webSocket.sendMessage(data) // library marker davegut.samsungTvWebsocket, line 234
-    if (state.pwrSeq && data?.contains("KEY_POWER")) {    // TecnoSimples: hora real da tecla de energia
+    if (pwrActive() && data?.contains("KEY_POWER")) {     // TecnoSimples: hora real da tecla de energia
         state.pwrKeySentAt = now()
         state.pwrKeyFor = state.pwrTarget
-        state.pwrKeyInSeq = true
         if (state.pwrTarget == "off") { state.pwrOffAt = now() } else { state.pwrOnAt = now() }
     }
 } // library marker davegut.samsungTvWebsocket, line 235
@@ -854,6 +918,8 @@ def connect(funct) { // library marker davegut.samsungTvWebsocket, line 240
     } // library marker davegut.samsungTvWebsocket, line 260
     state.lastFunction = funct // TRATO: remember last valid websocket function
     state.currentFunction = funct // library marker davegut.samsungTvWebsocket, line 261
+    state.wsReady = false       // TecnoSimples: só o ms.channel.connect diz que o canal está pronto
+    state.wsConnectAt = now()
     interfaces.webSocket.connect(url, ignoreSSLIssues: true) // library marker davegut.samsungTvWebsocket, line 262
     return // library marker davegut.samsungTvWebsocket, line 263
 } // library marker davegut.samsungTvWebsocket, line 264
@@ -907,6 +973,9 @@ def parse(resp) { // library marker davegut.samsungTvWebsocket, line 295
                 } else { // library marker davegut.samsungTvWebsocket, line 307
                     logData << [TOKEN: "noChange"] // library marker davegut.samsungTvWebsocket, line 308
                 } // library marker davegut.samsungTvWebsocket, line 309
+                state.wsReady = true
+                //    TecnoSimples: tecla de energia de uma sequência que morreu no meio (reinício do hub) não sai
+                if (state.pwrSeq && !pwrActive()) { state.pwrSeq = 0; pwrDropQueuedKey() }
                 if (state.wsData != "") { // send pending command once channel is confirmed ready
                     execMessage(state.wsData)
                     state.wsData = ""
@@ -1799,7 +1868,7 @@ library ( // library marker davegut.Logging, line 1
 
 def nameSpace() { return "davegut" } // library marker davegut.Logging, line 10
 
-def version() { return "2.4.1-ts" } // library marker davegut.Logging, line 12
+def version() { return "2.4.2-ts" } // library marker davegut.Logging, line 12
 
 def label() { // library marker davegut.Logging, line 14
     if (device) {  // library marker davegut.Logging, line 15

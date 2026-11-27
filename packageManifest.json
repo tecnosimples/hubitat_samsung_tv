@@ -1,13 +1,13 @@
 {
   "packageName": "Samsung TV Remote — TecnoSimples",
   "author": "TecnoSimples Tecnologia LTDA (baseado no driver de Dave Gutheinz)",
-  "version": "2.4.1",
+  "version": "2.4.2",
   "minimumHEVersion": "2.3.0",
   "dateReleased": "2026-11-27",
   "licenseFile": "https://raw.githubusercontent.com/tecnosimples/hubitat_samsung_tv/main/LICENSE",
   "documentationLink": "https://github.com/tecnosimples/hubitat_samsung_tv",
   "communityLink": "https://community.hubitat.com",
-  "releaseNotes": "2.4.1: uma leitura perdida não decide mais (o desligar e a sonda esperam duas seguidas sem resposta); a tecla POWER só se repete 5 s depois de ter saído; TV que responde sem PowerState (modelos anteriores) conta como ligada (antes aparecia sempre off e ligar/desligar não faziam nada; não verificado num equipamento assim). Dois comandos iguais em seguida (desligar, desligar) não alternam mais a TV. 2.4.0: ligar/desligar decididos pelo PowerState lido da TV (tecla em standby, Wake-on-LAN com a TV dormindo, desligar nunca liga uma TV em standby). Correções do driver base.",
+  "releaseNotes": "2.4.2: nenhuma tecla é escrita antes de a TV liberar o canal de controle (com o pedido de autorização na tela, teclas escritas antes podiam ser executadas depois de aceito); desligar, ligar, desligar em menos de 1 s não manda mais uma segunda tecla; o fim de um ligar/desligar publica o estado que acabou de ler (uma leitura perdida ali deixava o dispositivo errado até a sonda seguinte); a sonda não decide com um ligar/desligar em curso; tecla de uma sequência interrompida (reinício do hub) não sai depois; canal que a TV abre e nunca libera não prende mais os comandos (reconecta após 45 s); leitura periódica em voo não troca o estado publicado no fim de um ligar/desligar; TV sem PowerState: desligar logo depois de um ligar pela rede manda a tecla. 2.4.1: uma leitura perdida não decide mais (o desligar e a sonda esperam duas seguidas sem resposta); a tecla POWER só se repete 5 s depois de ter saído; TV que responde sem PowerState (modelos anteriores) conta como ligada (antes aparecia sempre off e ligar/desligar não faziam nada; não verificado num equipamento assim). Dois comandos iguais em seguida (desligar, desligar) não alternam mais a TV. 2.4.0: ligar/desligar decididos pelo PowerState lido da TV (tecla em standby, Wake-on-LAN com a TV dormindo, desligar nunca liga uma TV em standby). Correções do driver base.",
   "drivers": [
     {
       "id": "8a40a58c-e46a-49ca-bb98-e3685d9cdf11",

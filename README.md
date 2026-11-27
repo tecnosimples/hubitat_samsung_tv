@@ -14,7 +14,7 @@ Baseado no **Samsung TV Remote** de Dave Gutheinz (Apache-2.0), com o **ligar/de
 O resultado só é publicado com o estado **lido da TV**; sem confirmação em 15 s, o driver avisa no log e
 publica o estado real. Nada de "ligada por suposição".
 
-Detalhes da regra (2.4.1):
+Detalhes da regra (2.4.1 e 2.4.2):
 - **Uma leitura perdida não decide.** O desligar e a sonda periódica só tratam a TV como desligada depois de
   duas leituras seguidas sem resposta.
 - **A tecla POWER só se repete 5 s depois de ter saído**, para não ligar e desligar em seguida.
