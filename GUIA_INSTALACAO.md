@@ -101,6 +101,28 @@ Siga para a [etapa 3](#3-criar-e-configurar-o-device).
 
 ---
 
+## 🔌 Ligar e desligar: comando discreto
+
+No Hubitat, **`on` sempre deixa a TV ligada e `off` sempre deixa desligada**. Repetir o comando não
+inverte o estado: uma regra que dispara duas vezes não desliga a TV que acabou de ligar.
+
+Por baixo, a TV só aceita a tecla **POWER**, que é *toggle* (a mesma tecla liga e desliga), e o
+**Wake-on-LAN**, que só liga. O driver torna o comando discreto lendo o estado da TV antes de agir:
+
+| Estado lido da TV | `on` | `off` |
+|---|---|---|
+| ligada | não faz nada | tecla POWER |
+| em standby | tecla POWER | não faz nada |
+| dormindo (não responde) | Wake-on-LAN | não faz nada |
+
+- O resultado só é publicado depois de **confirmado pela TV**. Sem confirmação em 15 s, o driver
+  avisa no log e publica o estado real.
+- A tecla nunca é repetida antes de 5 s, para não ligar e desligar em seguida.
+- **Exceção:** TVs que não informam o estado (alguns modelos antigos). Nelas o `off` manda uma tecla só,
+  sem confirmar o standby. Não verificado em equipamento.
+
+---
+
 ## ❓ Problemas comuns
 
 | Sintoma | Causa provável | O que fazer |
